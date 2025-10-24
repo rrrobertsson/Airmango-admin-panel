@@ -8,6 +8,12 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+export interface UploadProgress {
+  total: number;
+  completed: number;
+  percentage: number;
+}
+
 // Cache auth status to avoid repeated user API calls per file
 let cachedUser: any | null = null
 let authCheckInFlight: Promise<any> | null = null
@@ -151,8 +157,44 @@ export async function uploadFilesBulk(
  * ULTRA-OPTIMIZED: Upload ALL files in a single API call
  * This is the most efficient approach - one API call for all files
  */
+// export async function uploadAllFilesUltraBulk(
+//   allFiles: { file: File; bucket: string; folder?: string }[]
+// ): Promise<{ url: string; type: string; originalFile: File }[]> {
+//   try {
+//     console.log('Using direct upload for', allFiles.length, 'files');
+    
+//     // Ensure auth once to avoid repeated user API calls
+//     await ensureAuthenticated()
+    
+//     // Try direct upload first for all files
+//     const uploadPromises = allFiles.map(fileData => 
+//       uploadFileToStorage(fileData.file, fileData.bucket, fileData.folder, { skipAuth: true })
+//         .then(result => ({
+//           ...result,
+//           originalFile: fileData.file
+//         }))
+//         .catch(error => {
+//           console.error(`Direct upload failed for ${fileData.file.name}:`, error);
+//           // Fallback to API for this specific file
+//           return uploadSingleFileViaAPI(fileData.file, fileData.bucket, fileData.folder)
+//             .then(apiResult => ({
+//               ...apiResult,
+//               originalFile: fileData.file
+//             }));
+//         })
+//     );
+    
+//     const results = await Promise.all(uploadPromises);
+//     return results;
+//   } catch (error) {
+//     console.error('All upload methods failed:', error);
+//     throw new Error(`Upload failed: ${error}`);
+//   }
+// }
+
 export async function uploadAllFilesUltraBulk(
-  allFiles: { file: File; bucket: string; folder?: string }[]
+  allFiles: { file: File; bucket: string; folder?: string }[],
+  onProgress?: (progress: UploadProgress) => void
 ): Promise<{ url: string; type: string; originalFile: File }[]> {
   try {
     console.log('Using direct upload for', allFiles.length, 'files');
@@ -160,21 +202,42 @@ export async function uploadAllFilesUltraBulk(
     // Ensure auth once to avoid repeated user API calls
     await ensureAuthenticated()
     
+    let completed = 0;
+    const total = allFiles.length;
+    
+    // Update progress function
+    const updateProgress = () => {
+      completed++;
+      if (onProgress) {
+        onProgress({
+          total,
+          completed,
+          percentage: Math.round((completed / total) * 100)
+        });
+      }
+    };
+    
     // Try direct upload first for all files
     const uploadPromises = allFiles.map(fileData => 
       uploadFileToStorage(fileData.file, fileData.bucket, fileData.folder, { skipAuth: true })
-        .then(result => ({
-          ...result,
-          originalFile: fileData.file
-        }))
+        .then(result => {
+          updateProgress();
+          return {
+            ...result,
+            originalFile: fileData.file
+          };
+        })
         .catch(error => {
           console.error(`Direct upload failed for ${fileData.file.name}:`, error);
           // Fallback to API for this specific file
           return uploadSingleFileViaAPI(fileData.file, fileData.bucket, fileData.folder)
-            .then(apiResult => ({
-              ...apiResult,
-              originalFile: fileData.file
-            }));
+            .then(apiResult => {
+              updateProgress();
+              return {
+                ...apiResult,
+                originalFile: fileData.file
+              };
+            });
         })
     );
     

@@ -23,6 +23,7 @@ import { FilePreview } from "./FilePreview"
 import { 
   uploadAllFilesUltraBulk
 } from "@/lib/upload-utils"
+import { Progress } from "../ui/progress"
 
 // Extended Day type to track existing and new media separately
 
@@ -63,6 +64,10 @@ export function TripCreateModal({
   const [days, setDays] = useState<DayWithMedia[]>([])
   const [loading, setLoading] = useState(false)
   const [removeExistingCover, setRemoveExistingCover] = useState(false)
+
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
+const [isUploading, setIsUploading] = useState<boolean>(false)
+const [totalFiles, setTotalFiles] = useState<number>(0)
   const { toast } = useToast()
 
   const isEditing = !!tripToEdit
@@ -381,6 +386,8 @@ function removeEntity(dayIndex: number, type: EntityType, entityIndex: number) {
 
 
 async function handleSave() {
+    setIsUploading(true);
+  setUploadProgress(0);
   setLoading(true);
   try {
     // ========================================
@@ -464,15 +471,24 @@ async function handleSave() {
       }
     })
     
+
+    setTotalFiles(allFiles.length);
     // ========================================
     // STEP 2: ULTRA BULK UPLOAD - ALL FILES IN ONE CALL
     // ========================================
     
     let uploadedFiles: { url: string; type: string; originalFile: File }[] = []
-    if (allFiles.length > 0) {
-      uploadedFiles = await uploadAllFilesUltraBulk(allFiles)
+    // if (allFiles.length > 0) {
+    //   uploadedFiles = await uploadAllFilesUltraBulk(allFiles)
+    // }
+        if (allFiles.length > 0) {
+      uploadedFiles = await uploadAllFilesUltraBulk(allFiles, (progress) => {
+        setUploadProgress(progress.percentage);
+      })
     }
     
+
+    setIsUploading(false);
     // ========================================
     // STEP 3: MAP UPLOADED FILES BACK TO THEIR SOURCES
     // ========================================
@@ -614,6 +630,7 @@ async function handleSave() {
     resetForm();
   } catch (e: any) {
     // Handle any errors during the upload or save process
+    setIsUploading(false);
     console.error('Save error:', e.message)
     toast({
       title: isEditing ? "Failed to update trip" : "Failed to create trip",
@@ -622,6 +639,8 @@ async function handleSave() {
     });
   } finally {
     setLoading(false);
+    setIsUploading(false);
+    setUploadProgress(0);
   }
 }
 
@@ -971,6 +990,15 @@ async function handleSave() {
         </div>
 
         <DialogFooter className="mt-4">
+            {isUploading && (
+    <div className="w-full space-y-2">
+      <div className="flex justify-between text-sm text-gray-600">
+        <span>Uploading files... ({uploadProgress}%)</span>
+        <span>{Math.round((uploadProgress / 100) * totalFiles)} of {totalFiles} files</span>
+      </div>
+      <Progress value={uploadProgress} className="w-full" />
+    </div>
+  )}
           <Button onClick={handleSave} loading={loading} size="lg" variant="default">
             {loading ? "Saving…" : isEditing ? "Update Trip" : "Save Trip"}
           </Button>
